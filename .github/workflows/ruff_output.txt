@@ -1,20 +1,27 @@
-Found 1 error (1 fixed, 0 remaining).
+All checks passed!
 diff --git a/.github/workflows/ruff_output.txt b/.github/workflows/ruff_output.txt
-index 8b13789..0abcfaf 100644
+index e7cb3ab..1f5f344 100644
 --- a/.github/workflows/ruff_output.txt
 +++ b/.github/workflows/ruff_output.txt
-@@ -1 +1 @@
--
-+Found 1 error (1 fixed, 0 remaining).
-diff --git a/script.py b/script.py
-index 9fbf2fa..055dd8d 100644
---- a/script.py
-+++ b/script.py
-@@ -15,7 +15,6 @@ from typing import List
- import os
- import re
- import requests
--import numpy as np
- 
- class RAGLlm(BaseModel):
-     model_url: str | None = Field(default="http://103.251.2.10:5000")
+@@ -1,20 +1 @@
+-Found 1 error (1 fixed, 0 remaining).
+-diff --git a/.github/workflows/ruff_output.txt b/.github/workflows/ruff_output.txt
+-index 8b13789..0abcfaf 100644
+---- a/.github/workflows/ruff_output.txt
+-+++ b/.github/workflows/ruff_output.txt
+-@@ -1 +1 @@
+--
+-+Found 1 error (1 fixed, 0 remaining).
+-diff --git a/script.py b/script.py
+-index 9fbf2fa..055dd8d 100644
+---- a/script.py
+-+++ b/script.py
+-@@ -15,7 +15,6 @@ from typing import List
+- import os
+- import re
+- import requests
+--import numpy as np
+- 
+- class RAGLlm(BaseModel):
+-     model_url: str | None = Field(default="http://103.251.2.10:5000")
++All checks passed!
