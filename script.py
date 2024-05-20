@@ -15,6 +15,7 @@ from typing import List
 import os
 import re
 import requests
+import numpy as np
 
 class RAGLlm(BaseModel):
     model_url: str | None = Field(default="http://103.251.2.10:5000")
