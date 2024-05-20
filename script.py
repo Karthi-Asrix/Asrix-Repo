@@ -15,7 +15,6 @@ from typing import List
 import os
 import re
 import requests
-import numpy as np
 
 
 class RAGLlm(BaseModel):
