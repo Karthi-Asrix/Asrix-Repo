@@ -1,10 +1,8 @@
-import langchain
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredFileLoader
 from langchain_community.vectorstores import FAISS
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
-from langchain.retrievers.multi_query import MultiQueryRetriever
 
 from textgen import TextGen
 from utils import doc_load, append_doc_log
@@ -16,7 +14,8 @@ from fastapi.requests import Request
 
 from pydantic import BaseModel, Field
 from typing import List
-import os, re
+import os
+import re
 import requests
 
 class RAGLlm(BaseModel):
@@ -176,7 +175,7 @@ async def rag3(request: Request, request_data: RAGLlm):
     
     else:
         print(f"Data file: '{doc_name}' does not exists.")
-        temp_dir = f'./data/temp'
+        temp_dir = './data/temp'
         os.makedirs(temp_dir, exist_ok=True)
 
         response = requests.get(request_data.context)
@@ -192,10 +191,10 @@ async def rag3(request: Request, request_data: RAGLlm):
         filePDF = re.search(r"pdf$", doc_path)
 
         if filePDF: # Checks if file type is pdf, else doc/docx
-            print(f"File type is pdf")
+            print("File type is pdf")
             loader = PyPDFLoader(doc_path)
         else:
-            print(f"File type is doc/docx/txt")
+            print("File type is doc/docx/txt")
             loader = UnstructuredFileLoader(doc_path)
 
         pages = loader.load_and_split()

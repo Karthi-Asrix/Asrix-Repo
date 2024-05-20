@@ -1,6 +1,9 @@
 import fitz
-import io, os, easyocr
-import requests, re
+import io
+import os
+import easyocr
+import requests
+import re
 from PIL import Image
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredFileLoader
 
