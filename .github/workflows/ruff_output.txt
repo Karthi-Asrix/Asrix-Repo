@@ -1,0 +1,35 @@
+All checks passed!
+diff --git a/.github/workflows/ruff_output.txt b/.github/workflows/ruff_output.txt
+index 6441ac1..1f5f344 100644
+--- a/.github/workflows/ruff_output.txt
++++ b/.github/workflows/ruff_output.txt
+@@ -1,29 +1 @@
+ All checks passed!
+-diff --git a/.github/workflows/ruff_output.txt b/.github/workflows/ruff_output.txt
+-index a19719c..1f5f344 100644
+---- a/.github/workflows/ruff_output.txt
+-+++ b/.github/workflows/ruff_output.txt
+-@@ -1,22 +1 @@
+--Found 1 error (1 fixed, 0 remaining).
+--diff --git a/.github/workflows/ruff_output.txt b/.github/workflows/ruff_output.txt
+--index 8b13789..0abcfaf 100644
+----- a/.github/workflows/ruff_output.txt
+--+++ b/.github/workflows/ruff_output.txt
+--@@ -1 +1 @@
+---
+--+Found 1 error (1 fixed, 0 remaining).
+--diff --git a/script.py b/script.py
+--index c1037d8..055dd8d 100644
+----- a/script.py
+--+++ b/script.py
+--@@ -12,7 +12,8 @@ from fastapi.requests import Request
+-- 
+-- from pydantic import BaseModel, Field
+-- from typing import List
+---import os,re
+--+import os
+--+import re
+-- import requests
+-- 
+-- class RAGLlm(BaseModel):
+-+All checks passed!
