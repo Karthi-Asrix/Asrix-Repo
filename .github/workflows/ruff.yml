@@ -55,4 +55,4 @@ jobs:
         git config user.email "${GITHUB_EMAIL}"
         git add -A
         git commit -m "Apply automatic RUFF fixes"
-        git push git@github.com:${{ github.repository }}.git Dev-Pull
+        git push git@github.com:${{ github.repository }}.git main
