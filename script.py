@@ -15,7 +15,8 @@ from typing import List
 import os
 import re
 import requests
-#comment to compare branch merges
+import numpy as np
+
 class RAGLlm(BaseModel):
     model_url: str | None = Field(default="http://103.251.2.10:5000")
     context: str | None = Field(default='data/orient-context.pdf', description="PDF file path on local. (eg. orient-context.pdf, webermeyer-context.pdf)")
