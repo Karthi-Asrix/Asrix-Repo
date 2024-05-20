@@ -1,9 +1,13 @@
+import langchain
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredFileLoader
 from langchain_community.vectorstores import FAISS
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
+from langchain.retrievers.multi_query import MultiQueryRetriever
+
 from textgen import TextGen
+from utils import doc_load, append_doc_log
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -386,6 +390,131 @@ async def rag4(request_data: RAGLlm2):
             os.remove(doc_path)
         faiss_index.save_local(char_dir)
 
+    os.rmdir(temp_dir)
+
+    retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
+
+    rag_chain = ( 
+    {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | textgen_llm
+    )
+
+    response = rag_chain.invoke(f"{request_data.prompt}")
+    return response
+
+
+@app.post("/v4-1/rag", summary="Testing RAG V4.1")
+async def rag4_1(request_data: RAGLlm2):
+    """
+        Naive RAG with added functionality:
+        - Vector database saved based on character ID and documents for each
+          character ID can be tracked inside character/document_logs.txt
+        - Only accepts documents in URL
+        - Able to handle pdf, doc, docx, txt file types
+        - Able to query multiple documents
+        - Architecture change for faster response. (Added use of both store
+          and character vector database)
+    """
+
+    prompt_template = """
+    ### [INST] Instruction: Give only greetings if there is no question. Answer the question based on the context information and if the question can't be answered based on the context, say "I don't know". Here is context to help:
+
+    {context}
+
+    ### QUESTION:
+    {question} [/INST]
+    """
+
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=prompt_template,
+    )
+
+    textgen_llm = TextGen(model_url=request_data.model_url, mode="instruct",
+                          temperature=0.1, repetition_penalty=1.1,
+                          max_new_tokens=1000, truncation_length=32768,
+                          do_sample=True)
+    embedding_model = HuggingFaceEmbeddings(model_name='sentence-transformers/all-mpnet-base-v2')
+
+    char_dir = f'character/{request_data.character_id}'
+    doc_log = f'{char_dir}/document_logs.txt'
+    temp_dir = f'./temp/{request_data.character_id}'
+    store_dir = './store'
+    os.makedirs(temp_dir, exist_ok=True)
+
+    try:
+        f = open(doc_log, "r")
+        cur_list = set()
+        for x in f:
+            cur_list.add(x.rstrip('\n'))
+        f.close()
+    except FileNotFoundError:
+        cur_list = set()
+
+    new_list = set()
+    doc_map = {}
+    for idx, value in enumerate(request_data.contexts):
+        match = re.search(r'\/([^\/]+)\.(pdf|txt|docx?)$', value)
+        doc_name = match.group(1) if match else None
+        new_list.add(doc_name)
+        doc_map[doc_name] = value  # Store doc url and accessible by document name
+
+    if not os.path.isdir(char_dir) or not cur_list.issubset(new_list):
+        print("Character does not exist or list is not a subset.\
+              \nReloading all documents...")
+
+        os.makedirs(char_dir, exist_ok=True)
+        with open(doc_log, 'w') as f:
+            pass
+
+        for idx, value in enumerate(request_data.contexts):
+            doc_name = list(doc_map.keys())[list(doc_map.values()).index(value)]  # Initialise doc_name by getting key from doc_map by value
+
+            if os.path.isdir(f"{store_dir}/{doc_name}"):
+                print(f"Load local store: {doc_name}")
+                append_doc_log(doc_name, doc_log)
+                faiss_index_i = FAISS.load_local(f"{store_dir}/{doc_name}",
+                                                 embedding_model)
+            else:
+                pages = doc_load(value, doc_log, temp_dir)
+                faiss_index_i = FAISS.from_documents(pages,
+                                                     embedding_model)
+                faiss_index_i.save_local(f'{store_dir}/{doc_name}')
+
+            if idx == 0:
+                faiss_index = faiss_index_i
+            else:
+                faiss_index.merge_from(faiss_index_i)
+
+        faiss_index.save_local(char_dir)
+    
+    else:
+        print("Character exists. Same set unless stated.")
+        
+        faiss_index = FAISS.load_local(char_dir, embedding_model)
+
+        if new_list != cur_list:
+            print(f"Is a subset: {cur_list} SUBSET OF {new_list}\
+                  \nAppending...")
+            
+            new_doc = new_list - cur_list
+            for doc in new_doc:
+                if os.path.isdir(f"{store_dir}/{doc}"):
+                    print(f"Load local store: {doc}")
+                    append_doc_log(doc, doc_log)
+                    faiss_index_i = FAISS.load_local(f"{store_dir}/{doc}",
+                                                     embedding_model)
+                else:
+                    pages = doc_load(doc_map[doc], doc_log, temp_dir)
+                    faiss_index_i = FAISS.from_documents(pages,
+                                                         embedding_model)
+                    faiss_index_i.save_local(f'{store_dir}/{doc}')
+
+                faiss_index.merge_from(faiss_index_i)
+
+            faiss_index.save_local(char_dir)
+        
     os.rmdir(temp_dir)
 
     retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
