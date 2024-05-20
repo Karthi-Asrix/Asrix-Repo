@@ -1,0 +1,57 @@
+*Creating VM Template
+
+Cleaning Template
+
+- Reset SSH Host Keys (To trigger cloud-init to regenerate new Host Keys)
+cd /etc/ssh
+sudo rm ssh_host_*
+
+- (Optional for certain distro) Emptying Machine ID (Identifiers to differentiate from another server to others)
+cat /etc/machine-id
+sudo truncate -s 0 /etc/machine-id
+
+- (Optional for certain distro) Check for Symbolic Links (Must link to previous machine-id dr)
+ls -l var/lib/dbus/machine-id
+
+- (Optional for certain distro) Create Symbolic Link if there is none
+sudo ln -s /etc/machine-id /var/lib/dbus/machine-id
+
+- Cleaning the image
+sudo apt clean
+sudo apt autoremove
+sudo cloud-init clean
+
+Creating Template
+
+- Convert VM to template
+
+- Unmount ISO Image
+
+- Add Cloud-init Drive
+
+- Edit Cloud-init Default User/Pass, IP Config to DHCP
+
+- Regenerate Image
+
+Cloning Template
+
+- Full Clone -> Entire copy of entire template
+- Target storage -> Be explicit
+
+*Creating CT Template
+
+Cleaning Template
+sudo apt update && sudo apt dist-upgrade
+sudo apt clean
+sudo apt autoremove
+
+cd /etc/ssh
+sudo rm ssh_host_*
+
+cat /etc/machine-id
+sudo truncate -s 0 /etc/machine-id
+
+Resetting Host Keys Manually
+cd /etc/ssh
+sudo rm ssh_host_*
+sudo dpkg-reconfigure openssh-server
