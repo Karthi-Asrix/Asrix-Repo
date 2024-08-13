@@ -31,13 +31,14 @@ class RAGLlm(BaseModel):
     )
 
 
+
 class RAGLlm2(BaseModel):
     model_url: str | None = Field(default="http://localhost:5000")
     character_id: str | None = Field(default="OT-PLC/150424022018")
     contexts: List[str] | None = Field(default=[
         "https://gist.githubusercontent.com/EdwardRayl/3436572afde8ce9e3faf5b7b95356a49/raw/6b25895fce480713560829dec31ac8220ffe5272/gists.txt",
         "https://www.rcrc-resilience-southeastasia.org/wp-content/uploads/2017/12/Contracts-Act-1950.pdf",
-        "https://github.com/SheetJS/libreoffice_test-files/blob/master/ooxml-strict/Lorem-ipsum.docx"], 
+        "https://github.com/SheetJS/libreoffice_test-files/blob/master/ooxml-strict/Lorem-ipsum.docx"],
         description="PDF file path on local. (eg. orient-context.pdf, webermeyer-context.pdf)")
     prompt: str | None = Field(default=None, description="User input")
 
@@ -435,7 +436,7 @@ async def rag4(request_data: RAGLlm2):
 
     retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
 
-    rag_chain = ( 
+    rag_chain = (
         {"context": retriever, "question": RunnablePassthrough()}
         | prompt
         | textgen_llm
