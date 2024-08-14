@@ -6,6 +6,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
+from langchain_community.chat_models.openai import ChatOpenAI
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from typing import List
 import os
 import re
 import requests
+import shutil
 
 from textgen import TextGen
 from utils import doc_load, append_doc_log
@@ -23,7 +25,7 @@ from utils import doc_load, append_doc_log
 
 class RAGLlm(BaseModel):
     model_url: str | None = Field(default="http://localhost:5000")
-    context: str | None = Field(default='data/orient-context.pdf', description="PDF file path on local. (eg. orient-context.pdf, webermeyer-context.pdf)")
+    context: str | None = Field(default='data/orient-context.pdf', description="PDF file path on local.")
     prompt: str | None = Field(default=None, description="User input")
 
     model_config = ConfigDict(
@@ -38,8 +40,27 @@ class RAGLlm2(BaseModel):
         "https://gist.githubusercontent.com/EdwardRayl/3436572afde8ce9e3faf5b7b95356a49/raw/6b25895fce480713560829dec31ac8220ffe5272/gists.txt",
         "https://www.rcrc-resilience-southeastasia.org/wp-content/uploads/2017/12/Contracts-Act-1950.pdf",
         "https://github.com/SheetJS/libreoffice_test-files/blob/master/ooxml-strict/Lorem-ipsum.docx"], 
-        description="PDF file path on local. (eg. orient-context.pdf, webermeyer-context.pdf)")
+        description="Doc, PDF, Text files on URL or Website URL")
     prompt: str | None = Field(default=None, description="User input")
+
+    model_config = ConfigDict(
+        protected_namespaces=()
+    )
+
+
+class RAGOpenAI(BaseModel):
+    api_key: str | None = Field(default=None)
+    model: str | None = Field(default="gpt-4o")
+    embedding_model: str | None = Field(default="text-embedding-ada-002")
+    max_tokens: int | None = Field(default=100)
+    temperature: float | None = Field(default=0.1)
+    messages: str | None = Field(default=None)
+    character_id: str | None = Field(default="OT-PLC/150424022018")
+    contexts: List[str] | None = Field(default=[
+        "https://gist.githubusercontent.com/EdwardRayl/3436572afde8ce9e3faf5b7b95356a49/raw/6b25895fce480713560829dec31ac8220ffe5272/gists.txt",
+        "https://www.rcrc-resilience-southeastasia.org/wp-content/uploads/2017/12/Contracts-Act-1950.pdf",
+        "https://github.com/SheetJS/libreoffice_test-files/blob/master/ooxml-strict/Lorem-ipsum.docx"], 
+        description="Documents on URL.")
 
     model_config = ConfigDict(
         protected_namespaces=()
@@ -446,7 +467,7 @@ async def rag4(request_data: RAGLlm2):
 
 
 @app.post("/v4-1/rag", summary="Testing RAG V4.1")
-async def rag4_1(request_data: RAGLlm2):
+async def rag4_1(request_data: RAGLlm2) -> str:
     """
         Naive RAG with added functionality:
         - Vector database saved based on character ID and documents for each
@@ -497,12 +518,16 @@ async def rag4_1(request_data: RAGLlm2):
 
     new_list = set()
     doc_map = {}
-    for idx, value in enumerate(request_data.contexts):
-        match = re.search(r'\/([^\/]+)\.(pdf|txt|docx?)$', value)
-        doc_name = match.group(1) if match else value.replace("/", "_")
-        new_list.add(doc_name)
-        # Store doc url and accessible by document name
-        doc_map[doc_name] = value
+
+    if request_data.contexts:
+        for idx, value in enumerate(request_data.contexts):
+            match = re.search(r'\/([^\/]+)\.(pdf|txt|docx?)$', value)
+            doc_name = match.group(1) if match else value.replace("/", "_")
+            new_list.add(doc_name)
+            # Store doc url and accessible by document name
+            doc_map[doc_name] = value
+    else:
+        return "Please submit documents to use RAG."
 
     if not os.path.isdir(char_dir) or not cur_list.issubset(new_list):
         print("Character does not exist or list is not a subset.\
@@ -538,7 +563,12 @@ async def rag4_1(request_data: RAGLlm2):
     else:
         print("Character exists. Same set unless stated.")
 
-        faiss_index = FAISS.load_local(char_dir, embedding_model)
+        try:
+            faiss_index = FAISS.load_local(char_dir, embedding_model)
+        except:
+            shutil.rmtree(char_dir)
+            shutil.rmtree(temp_dir)
+            return "Internal server error. Try sending a new query."
 
         if new_list != cur_list:
             print(f"Is a subset: {cur_list} SUBSET OF {new_list}\
@@ -561,7 +591,7 @@ async def rag4_1(request_data: RAGLlm2):
 
             faiss_index.save_local(char_dir)
 
-    os.rmdir(temp_dir)
+    shutil.rmtree(temp_dir)
 
     retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
 
@@ -573,3 +603,144 @@ async def rag4_1(request_data: RAGLlm2):
 
     response = rag_chain.invoke(f"{request_data.prompt}")
     return response
+
+
+@app.post("/rag/openai", summary="OpenAI RAG")
+async def rag_openai(request_data: RAGOpenAI):
+    """
+        Naive RAG with added functionality:
+        - Vector database saved based on character ID and documents for each
+          character ID can be tracked inside character/document_logs.txt
+        - Only accepts documents in URL
+        - Able to handle pdf, doc, docx, txt file types
+        - Able to query multiple documents
+        - Architecture change for faster response. (Added use of both store
+          and character vector database)
+    """
+    # Give only greetings if there is no question. 
+    prompt_template = """
+    ### [INST] Instruction: Answer all questions and use the context information to help. Here is context to help:
+
+    {context}
+
+    ### QUESTION:
+    {question} [/INST]
+    """
+
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=prompt_template,
+    )
+
+    llm = ChatOpenAI(model=request_data.model, api_key=request_data.api_key, max_tokens=request_data.max_tokens)
+    model_name = "sentence-transformers/all-mpnet-base-v2"
+    embedding_model = HuggingFaceEmbeddings(model_name=model_name)
+
+    char_dir = f'character/{request_data.character_id}'
+    doc_log = f'{char_dir}/document_logs.txt'
+    temp_dir = f'./temp/{request_data.character_id}'
+    store_dir = './store'
+    os.makedirs(temp_dir, exist_ok=True)
+
+    try:
+        f = open(doc_log, "r")
+        cur_list = set()
+        for x in f:
+            cur_list.add(x.rstrip('\n'))
+        f.close()
+    except FileNotFoundError:
+        cur_list = set()
+
+    new_list = set()
+    doc_map = {}
+
+    if request_data.contexts:
+        for idx, value in enumerate(request_data.contexts):
+            match = re.search(r'\/([^\/]+)\.(pdf|txt|docx?)$', value)
+            doc_name = match.group(1) if match else value.replace("/", "_")
+            new_list.add(doc_name)
+            # Store doc url and accessible by document name
+            doc_map[doc_name] = value
+    else:
+        return "Please submit documents to use RAG."
+
+    if not os.path.isdir(char_dir) or not cur_list.issubset(new_list):
+        print("Character does not exist or list is not a subset.\
+              \nReloading all documents...")
+
+        os.makedirs(char_dir, exist_ok=True)
+        with open(doc_log, 'w') as f:  # Create a new empty document_logs.txt
+            pass
+
+        for idx, value in enumerate(request_data.contexts):
+            # Initialise doc_name by getting key from doc_map by value
+            doc_index = list(doc_map.values()).index(value)
+            doc_name = list(doc_map.keys())[doc_index]
+
+            if os.path.isdir(f"{store_dir}/{doc_name}"):
+                print(f"Load local store: {doc_name}")
+                append_doc_log(doc_name, doc_log)
+                faiss_index_i = FAISS.load_local(f"{store_dir}/{doc_name}",
+                                                 embedding_model)
+            else:
+                pages = doc_load(value, doc_log, temp_dir)
+                faiss_index_i = FAISS.from_documents(pages,
+                                                     embedding_model)
+                faiss_index_i.save_local(f'{store_dir}/{doc_name}')
+
+            if idx == 0:
+                faiss_index = faiss_index_i
+            else:
+                faiss_index.merge_from(faiss_index_i)
+
+        faiss_index.save_local(char_dir)
+
+    else:
+        print("Character exists. Same set unless stated.")
+
+        try:
+            faiss_index = FAISS.load_local(char_dir, embedding_model)
+        except:
+            shutil.rmtree(char_dir)
+            shutil.rmtree(temp_dir)
+            return "Internal server error. Try sending a new query."
+
+        if new_list != cur_list:
+            print(f"Is a subset: {cur_list} SUBSET OF {new_list}\
+                  \nAppending...")
+
+            new_doc = new_list - cur_list
+            for doc_name in new_doc:
+                if os.path.isdir(f"{store_dir}/{doc_name}"):
+                    print(f"Load local store: {doc_name}")
+                    append_doc_log(doc_name, doc_log)
+                    faiss_index_i = FAISS.load_local(f"{store_dir}/{doc_name}",
+                                                     embedding_model)
+                else:
+                    pages = doc_load(doc_map[doc_name], doc_log, temp_dir)
+                    faiss_index_i = FAISS.from_documents(pages,
+                                                         embedding_model)
+                    faiss_index_i.save_local(f'{store_dir}/{doc_name}')
+
+                faiss_index.merge_from(faiss_index_i)
+
+            faiss_index.save_local(char_dir)
+
+    shutil.rmtree(temp_dir)
+
+    retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
+
+    relevant_docs = retriever.get_relevant_documents(request_data.messages)
+    for doc in relevant_docs:
+        print(doc.page_content)
+        print("-"*10)
+
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+    )
+
+    response = rag_chain.invoke(f"{request_data.messages}")
+    
+    return response.content
