@@ -8,7 +8,7 @@ from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain_community.chat_models.openai import ChatOpenAI
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
