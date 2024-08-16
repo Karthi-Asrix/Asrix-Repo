@@ -53,6 +53,26 @@ class RAGLlm2(BaseModel):
         protected_namespaces=()
     )
 
+class RAGLlm3(BaseModel):
+    model_url: str | None = Field(default="http://localhost:5000")
+    character_id: str | None = Field(default="OT-PLC/150424022018")
+    prompt: str | None = Field(default=None, description="User input")
+
+    model_config = ConfigDict(
+        protected_namespaces=()
+    )
+
+class Documents(BaseModel):
+    character_id: str | None = Field(default="OT-PLC/150424022018")
+    contexts: List[str] | None = Field(default=[
+        "https://gist.githubusercontent.com/EdwardRayl/3436572afde8ce9e3faf5b7b95356a49/raw/6b25895fce480713560829dec31ac8220ffe5272/gists.txt",
+        "https://www.rcrc-resilience-southeastasia.org/wp-content/uploads/2017/12/Contracts-Act-1950.pdf",
+        "https://github.com/SheetJS/libreoffice_test-files/blob/master/ooxml-strict/Lorem-ipsum.docx"], 
+        description="Doc, PDF, Text files on URL or Website URL")
+
+    model_config = ConfigDict(
+        protected_namespaces=()
+    )
 
 class RAGOpenAI(BaseModel):
     api_key: str | None = Field(default=None)
@@ -620,16 +640,11 @@ async def rag4_1(request_data: RAGLlm2) -> str:
     return response
 
 @app.post("/v4-1-1/rag", summary="Testing RAG V4.1.1 with database")
-async def rag4_1(request_data: RAGLlm2, db_session: Session = Depends(get_db)) -> str:
+async def rag4_1_1(request_data: RAGLlm3, db_session: Session = Depends(get_db)) -> str:
     """
         Naive RAG with added functionality:
-        - Vector database saved based on character ID and documents for each
-          character ID can be tracked inside character/document_logs.txt
-        - Only accepts documents in URL
-        - Able to handle pdf, doc, docx, txt file types
-        - Able to query multiple documents
-        - Architecture change for faster response. (Added use of both store
-          and character vector database)
+        - Every prompt will stored into mySql database
+        - Prompt, context and response stored in mySql database
     """
 
     prompt_template = """
@@ -650,6 +665,52 @@ async def rag4_1(request_data: RAGLlm2, db_session: Session = Depends(get_db)) -
                           temperature=0.1, repetition_penalty=1.1,
                           max_new_tokens=1000, truncation_length=32768,
                           do_sample=True)
+
+    model_name = "sentence-transformers/all-mpnet-base-v2"
+    embedding_model = HuggingFaceEmbeddings(model_name=model_name)
+
+    char_dir = f'character/{request_data.character_id}'
+
+    try: 
+        faiss_index = FAISS.load_local(char_dir, embedding_model)
+    except:
+        return ("Please submit documents to use RAG.")
+    
+    retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
+
+    context = retriever.get_relevant_documents(request_data.prompt)
+
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | textgen_llm
+    )
+
+    response = rag_chain.invoke(f"{request_data.prompt}")
+
+    db_data = models.FastApiData()
+    db_data.context = str(context)
+    db_data.prompt = request_data.prompt
+    db_data.response = response
+
+    db_session.add(db_data)
+    db_session.commit()
+
+    return response
+
+@app.post("/load-documents", summary="Load documents into character database")
+async def test(request_data: Documents) -> str:
+
+    """
+        Naive RAG with added functionality:
+        - Vector database saved based on character ID and documents for each
+          character ID can be tracked inside character/document_logs.txt
+        - Only accepts documents in URL
+        - Able to handle pdf, doc, docx, txt file types
+        - Able to query multiple documents
+        - Architecture change for faster response. (Added use of both store
+          and character vector database)
+    """
 
     model_name = "sentence-transformers/all-mpnet-base-v2"
     embedding_model = HuggingFaceEmbeddings(model_name=model_name)
@@ -746,32 +807,7 @@ async def rag4_1(request_data: RAGLlm2, db_session: Session = Depends(get_db)) -
 
     shutil.rmtree(temp_dir)
 
-    retriever = faiss_index.as_retriever(search_kwargs={'k': 5})
-
-    context = retriever.get_relevant_documents(request_data.prompt)
-
-    rag_chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
-        | prompt
-        | textgen_llm
-    )
-
-    response = rag_chain.invoke(f"{request_data.prompt}")
-
-    print("-------------------------------")
-    print("Context : " + str(context))
-    print("Prompt: " + request_data.prompt)
-    print("Response: " + response)
-
-    db_data = models.FastApiData()
-    db_data.context = str(context)
-    db_data.prompt = request_data.prompt
-    db_data.response = response
-
-    db_session.add(db_data)
-    db_session.commit()
-
-    return response
+    return (f"Documents succesful to stored into character database : {char_dir}")
 
 @app.get("/")
 def read_api(db_session: Session = Depends(get_db)):
